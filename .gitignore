@@ -1,0 +1,6 @@
+**/.DS_Store
+**/*.pyc
+# prevents database creds from being pushed
+db_creds.py
+lib/db_creds.py
+data/LOS_ANGELES_COUNTY_RESTAURANTS_AND_MARKETS_VIOLATIONS.csv
