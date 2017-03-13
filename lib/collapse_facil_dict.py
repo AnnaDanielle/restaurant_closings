@@ -117,7 +117,7 @@ event_facil_addresses = {'2627 N HOLLYWOOD WAY':          'BOB HOPE',
                          '1440 E IMPERIAL AVE':           'EMBASSY SUITES',
                          '6600 TOPANGA CANYON BLVD':      'WESTFIELD TOPANGA',
                          '9039 SUNSET BLVD':              '1 OAK',
-                         '208 N RODEO DR':                '208 RODEO'
+                         '208 N RODEO DR':                '208 RODEO',
                          '1000 ELYSIAN PARK AVE':         'DODGER STADIUM'
                          }
 

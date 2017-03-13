@@ -4,7 +4,7 @@ Module to perform post and get functions on Yelp API.
 
 from sklearn.externals import joblib
 from db_creds import fusion_creds
-from urllib import urlencode
+from urllib import urlencode, quote
 from time import sleep
 import requests
 import random
@@ -337,9 +337,13 @@ def yelp_api_calls_business_id(list_of_business_ids):
 
     for bus in list_of_business_ids:
         values = []
-        url = 'https://www.yelp.com/biz/{}?sort_by=date_asc'.format(bus)
-        sleep(30)
-        rqst = requests.request('GET', url, headers=headers)
+        new_str = quote(bus.encode('utf8'))
+        url = 'https://www.yelp.com/biz/{}?sort_by=date_asc'.format(new_str)
+        try:
+            rqst = requests.request('GET', url, headers=headers)
+        except:
+            sleep(30)
+            rqst = requests.request('GET', url, headers=headers)
         beg_reviews = rqst.content.split('<script type="application/ld+json">')[1].split(', "servesCuisine":')[0] + '}'
         try:
             json_reviews = json.loads(beg_reviews)    
@@ -352,9 +356,13 @@ def yelp_api_calls_business_id(list_of_business_ids):
         values.append(rating_val)
         for review in json_reviews['review']:
             values.append((review['author'], review['datePublished'], review['reviewRating']['ratingValue']))
-            url_recent = 'https://www.yelp.com/biz/{}?sort_by=date_desc'.format(bus)
         
-        rqst = requests.request('GET', url_recent, headers=headers)
+        url_recent = 'https://www.yelp.com/biz/{}?sort_by=date_desc'.format(new_str)
+        try:
+            rqst = requests.request('GET', url_recent, headers=headers)
+        except:
+            sleep(30)
+            rqst = requests.request('GET', url_recent, headers=headers)
         beg_reviews = rqst.content.split('<script type="application/ld+json">')[1].split(', "servesCuisine":')[0] + '}'
         try:
             json_reviews = json.loads(beg_reviews)    
@@ -363,6 +371,7 @@ def yelp_api_calls_business_id(list_of_business_ids):
             json_reviews = json.loads(beg_reviews)
         for review in json_reviews['review']:
             values.append((review['author'], review['datePublished'], review['reviewRating']['ratingValue']))
+        
         ratings[bus] = values
 
     return ratings

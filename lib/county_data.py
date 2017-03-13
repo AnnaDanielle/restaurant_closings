@@ -73,15 +73,3 @@ def rename_facilities(address, facility_name):
         return event_facil_addresses[address]
     else:
         return facility_name
-
-def clean_addresses_hash(address):
-    """
-    Return a pure address if the address contains a number hash
-    with a suite number
-    """
-    new_string = re.sub('( #.*$)', '', address)
-    return new_string
-
-def clean_addresses_ste(address):
-
-    return re.sub('( STE .*$)', '', address)
