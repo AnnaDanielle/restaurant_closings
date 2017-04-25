@@ -15,7 +15,7 @@ There are two datasets that I will be working with:
 1. LA County Dataset (A)
 2. Yelp Dataset (B, C, D)
 
-![alt text](https://github.com/AnnaDanielle/restaurant_closings/blob/master/doc/data_acquisition.png)
+![data_acq](https://github.com/AnnaDanielle/restaurant_closings/blob/master/doc/data_acquisition.png)
 
 
 ## LA County 
@@ -42,13 +42,19 @@ Two main issues with Yelp API:
 1. Yelp operates on a ‘best match’ model, where the reasons for the output when using the API requests being the ‘best’ are not clear.
 To solve our first problem, I created a function that has sleep time built in:
 
+![yelp_sleep](https://github.com/AnnaDanielle/restaurant_closings/blob/master/doc/yelp_sleep.png)
+
 The second problem is not readily solved, and will be worked on at a later date.
 
 ## Data Mining
 After we have gathered all data and view the correlations, it is clear that there is no unexpected correlation between our parameters, indicating we won’t need to consolidate any of our dimensions. Also for that reason, it might be a good idea to use a Random Forest.
 
+![correl](https://github.com/AnnaDanielle/restaurant_closings/blob/master/doc/correllation.png)
+
 ## Data Modeling
 Our random forest performs quite well, but considering 80% of the restaurants are open, our benchmark needs to perform better than 80%. Thankfully, it does over a maximum tree depth of 4. However, given the scope of the data, we aren’t quite confident in the model to represent a subset of the population when Yelp returned those ‘best matches’. 
+
+![scores](https://github.com/AnnaDanielle/restaurant_closings/blob/master/doc/train_test_scores.png)
 
 ## Additional Work
 1. The first thing I want to do is gather the entire scope of Los Angeles from Yelp. This will be an arduous task.
