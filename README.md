@@ -40,6 +40,7 @@ The cleaner the data is, the more successful our Yelp API calls will be.
 Two main issues with Yelp API:
 1. It’s limited—you can only gather so much information. If you find a new way to use the Yelp API (possibly, in an unintended manner), they will attempt to kick you out.
 1. Yelp operates on a ‘best match’ model, where the reasons for the output when using the API requests being the ‘best’ are not clear.
+
 To solve our first problem, I created a function that has sleep time built in:
 
 ![yelp_sleep](https://github.com/AnnaDanielle/restaurant_closings/blob/master/doc/yelp_sleep.png)
@@ -52,7 +53,7 @@ After we have gathered all data and view the correlations, it is clear that ther
 ![correl](https://github.com/AnnaDanielle/restaurant_closings/blob/master/doc/correllation.png)
 
 ## Data Modeling
-Our random forest performs quite well, but considering 80% of the restaurants are open, our benchmark needs to perform better than 80%. Thankfully, it does over a maximum tree depth of 4. However, given the scope of the data, we aren’t quite confident in the model to represent a subset of the population when Yelp returned those ‘best matches’. 
+Our random forest performs quite well, but considering 80% of the restaurants are open, our benchmark needs to perform better than 80%. Thankfully it does perform better over a maximum tree depth of 4. However, given the scope of the data, we aren’t quite confident in the model to represent a subset of the population when Yelp returned those ‘best matches’. 
 
 ![scores](https://github.com/AnnaDanielle/restaurant_closings/blob/master/doc/train_test_scores.png)
 
