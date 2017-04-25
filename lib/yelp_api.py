@@ -6,30 +6,10 @@ from sklearn.externals import joblib
 from db_creds import fusion_creds
 from urllib import urlencode, quote
 from time import sleep
+import pandas as pd
 import requests
 import random
 import json
-
-# dictionary for phone and term/loc searches
-
-
-# lists and dictionaries for phone searches
-process_tracker = {}
-phn_srch_dict = {}
-phn_frmt_dict = {}
-unknwn_phn = {}
-unsrchbl_phn = []
-yp_phn_srch_fail = []
-
-# lists and dictionaries for term/location searches
-tl_srch_dict = {}
-tl_frmt_dict = {}
-unknwn_tl = {}
-unsrchbl_tl = []
-yp_tl_srch_fail = []
-
-# lists and dictionaries for business id searches
-ratings = {}
 
 def obtain_bearer_token():
     """
@@ -48,290 +28,312 @@ def obtain_bearer_token():
     if response.status_code == 200:
         return bearer_token
 
-def appnd_prcss_trckr(key_name, num_value, prcnt_value):
+def append_process_tracker(process, process_list):
     """
     Create a dictionary, tracking how much of our data requests
     is requested accurately from Yelp. 
     """
-    process_tracker[key_name] = (num_value, prcnt_value)
+    if process in process_list:
+        return 'Warning: this process has already been performed'
+    else:
+        process_list.append(process)
 
-def return_proccess_tracker():
-    """
-    Show all processes at any point in our Yelp searches.
-    """
-    return process_tracker
-
-def create_phone_not_null_df(data):
+def create_not_null_phone_df(data, process_list):
     """
     Return a DataFrame with restaurants who have a non-null
     phone number.
     """
-    appnd_prcss_trckr('0_Total DataFrame', len(data['phone']), '100%')
+
+    total_search_list_length = len(data['phone'])
+
+    process = ['The total Yelp search is {} restaurants'.format(total_search_list_length)]
+    append_process_tracker(process, process_list)
+    
     return data[data['phone'] != '+1nan']
 
-def create_searches(data, search_type, optional_data=False):
+def create_searches(data, search_type, process_list, optional_data=False):
     """
     Provide a list of terms for our Yelp API search.
     """
     if search_type.lower() == 'phone':
-        non_nan_df = create_phone_not_null_df(data)
-        trms = non_nan_df['facility'].values
-        lctn = (non_nan_df['address'].values + ', ' + non_nan_df['city'].values + ' ' 
-                 + non_nan_df['zip_cd'].values) + ' CA'
-        phn = non_nan_df['phone'].values
-        search_list = zip(trms, lctn, phn)
-        appnd_prcss_trckr('1_Restaurants with Phone Provided', 
-                          len(search_list), 
-                          '{}%'.format(round(len(search_list)*100./len(data['phone'])),2))
-        return search_list
+        phone_df = create_not_null_phone_df(data, process_list)
+        terms = phone_df['facility'].values
+        location = (phone_df['address'].values + ' ' + phone_df['city'].values + ' ' 
+                    + phone_df['zip_cd'].values)
+        phone_num = phone_df['phone'].values
+        phone_search_list = zip(terms, location, phone_num)
+
+        phone_search_list_length = len(phone_search_list)
+        phone_search_list_pct = round((phone_search_list_length * 100. / len(data['phone'])), 2)
+
+        process = ['{} restaurants provided a phone number ({}%)'.format(phone_search_list_length, 
+                                                                         phone_search_list_pct)]
+        append_process_tracker(process, process_list)
+
+        return process_list, phone_search_list
 
     elif search_type.lower() == 'term_loc':
-        facil_val = data['facility'].values
-        add_val = data['address'].values
-        name_srch_val = optional_data[optional_data['match'] == 1.0]['search_name']
-        add_srch_val = optional_data[optional_data['match'] == 1.0]['search_address']
+        terms = data['facility'].values
+        locations = (data['address'].values + ' ' + data['city'].values + ' ' 
+                    + data['zip_cd'].values)
+        term_matches = optional_data['search_name']
+        address_matches = optional_data['search_address']
         
-        succ_srch = set(zip(name_srch_val, add_srch_val))
-        new_search = set(zip(facil_val, add_val)) - set(zip(name_srch_val, add_srch_val))
-        tot_df_num = process_tracker['0_Total DataFrame'][0]
+        succussful_phone_searches = set(zip(term_matches, address_matches))
+        term_loc_searches = set(zip(terms, locations)) - set(zip(term_matches, address_matches))
 
-        appnd_prcss_trckr('3_Successful Matches from Phone Searches', 
-                          len(succ_srch), 
-                          '{}%'.format(round(len(succ_srch)*100./tot_df_num),2))
-        appnd_prcss_trckr('4_Remaining Restaurants to Search with Term/Location',
-                          len(new_search),
-                          '{}%'.format(round(len(new_search)*100./tot_df_num),2))   
+        number_of_remaining_searches = len(term_loc_searches)
+        number_of_remaining_searches_pct = round(number_of_remaining_searches * 100. / 
+                                                 int(process_list[0][0].split(' ')[5]),2)
+
+        process = ['{} remaining restaurants to search with term/location({}%)'.format(number_of_remaining_searches,
+                                                                                       number_of_remaining_searches_pct)]
+
+        append_process_tracker(process, process_list) 
         
-        return new_search
+        return term_loc_searches
 
     else:  
         print 'Provide a proper input for a search_type (phone or term_loc)' 
 
-def yelp_api_calls(searches, search_type):
+def yelp_api_calls(search_list, search_type):
     """
     Provide a dictionary of Yelp API searches, as well as a list of 
     failed searches.
     """
     bearer_token = obtain_bearer_token()
     headers = {'Authorization': 'Bearer {}'.format(bearer_token)}
+    search_dict = {}
+    unsearchable_list = []
 
     if search_type.lower() == 'phone':
         url = 'https://api.yelp.com/v3/businesses/search/phone'
-    
-        for i in searches:
+
+        for i in search_list:
             url_params = {'phone': i[2]}
             for u_ in url_params:
                 try:
-                    phn_srch_dict[i[0],i[1]] = dict(requests.request('GET', url, 
-                                                                     headers=headers, 
-                                                                     params=url_params).json())['businesses']
+                    search_dict[i[0],i[1]] = dict(requests.request('GET', url, 
+                                                                   headers=headers, 
+                                                                   params=url_params).json())['businesses']
                 except:
-                    unsrchbl_phn.append(i)
+                    unsearchable_list.append(i)
 
-        return phn_srch_dict, unsrchbl_phn
+        return search_dict, unsearchable_list
 
     elif search_type.lower() == 'term_loc':
         url = 'https://api.yelp.com/v3/businesses/search'
 
-        for i in searches:
+        for i in search_list:
             url_params = {'location': i[1],
                           'term': i[0],
                           'limit': 30,
                           'locale': 'en_US'}
             try:
-                tl_srch_dict[i] = dict(requests.request('GET', url, 
-                                                        headers=headers, 
-                                                        params=url_params).json())['businesses']
+                search_dict[i] = dict(requests.request('GET', url, 
+                                                       headers=headers, 
+                                                       params=url_params).json())['businesses']
             except:
-                unsrchbl_tl.append(url_params)
+                unsearchable_list.append(url_params)
 
-        return tl_srch_dict, unsrchbl_tl
+        return search_dict, unsearchable_list
     
     else:
         print 'Provide a proper input for a search_type (phone or term_loc)'    
 
-def find_failed_searches(search_num, srch_dict, search_type):
+def find_failed_searches(search_dict, search_type, process_list, save_as_name):
     """
     Remove empty Yelp results from our search dictionary, and 
     return the search list of those results.
     """
-    if search_type.lower() == 'phone':
-        for key, value in srch_dict.items():
-            if value == []:
-                yp_phn_srch_fail.append(key)
-                srch_dict.pop(key, value)
-    
-        num_succ_srch = len(phn_srch_dict.keys())
-        tot_df_num = process_tracker['0_Total DataFrame'][0]
-    
-        joblib.dump(srch_dict, 'data/phn_srch_dict_{}.pkl'.format(search_num))
-        appnd_prcss_trckr('2_Restaurants with Successful Phone Searches', 
-                          num_succ_srch, 
-                          '{}%'.format(round(num_succ_srch*100./tot_df_num),2))
+    yelp_search_fail_list = []
+    revised_search_dict = {}
+    for key, value in search_dict.items():
+        if value == []:
+            yelp_search_fail_list.append(key)
+        else:
+            revised_search_dict[key] = value
 
-        return yp_phn_srch_fail
+    number_of_successful_searches = len(revised_search_dict.keys())
+    number_of_successful_searches_pct = round(number_of_successful_searches * 100. / 
+                                              int(process_list[0][0].split(' ')[5]),2)
+
+    if search_type.lower() == 'phone':
+        process = ['{} restaurant phone searches yielded a response from yelp ({}%)'.format(number_of_successful_searches, 
+                                                                                            number_of_successful_searches_pct)]
+        append_process_tracker(process, process_list)    
+        joblib.dump(revised_search_dict, 'data/phone_search_dict_{}.pkl'.format(save_as_name))
 
     elif search_type.lower() == 'term_loc':
-        for key, value in srch_dict.items():
-            if value == []:
-                yp_tl_srch_fail.append(key)
-                srch_dict.pop(key, value)
+        process = ['{} restaurant term/location searches yielded a response from yelp ({}%)'.format(number_of_successful_searches, 
+                                                                                                    number_of_successful_searches_pct)]
+        append_process_tracker(process, process_list)    
+        joblib.dump(revised_search_dict, 'data/term_loc_search_dict_{}.pkl'.format(save_as_name))
     
-        num_succ_srch = len(tl_srch_dict.keys())
-        tot_df_num = process_tracker['0_Total DataFrame'][0]
-    
-        joblib.dump(srch_dict, 'data/tl_srch_dict_{}.pkl'.format(search_num))
-        appnd_prcss_trckr('5_Restaurants with Successful Term/Location Searches', 
-                          num_succ_srch, 
-                          '{}%'.format(round(num_succ_srch*100./tot_df_num),2))
-
-        return yp_tl_srch_fail
-
     else:
         print 'Provide a proper input for a search_type (phone or term_loc)'
 
-def load_srch_dict(search_num, search_type):
+    return yelp_search_fail_list
+
+def load_search_dict(save_as_name, search_type):
     """
     Load a pickled search dictionary.
     """
     if search_type.lower() == 'phone':
-        return joblib.load('data/phn_srch_dict_{}.pkl'.format(search_num))
+        return joblib.load('data/phone_search_dict_{}.pkl'.format(save_as_name))
     elif search_type.lower() == 'term_loc':
-        return joblib.load('data/tl_srch_dict_{}.pkl'.format(search_num))
+        return joblib.load('data/term_loc_search_dict_{}.pkl'.format(save_as_name))
     else:
         print 'Provide a proper input for a search_type (phone or term_loc)'
 
-def format_srch_dict(srch_dict, search_type):
+def format_search_dict(search_dict):
     """
     Return dictionaryh with parsed Yelp API results to only provide 
     necessary parameters.
     """
-    if search_type.lower() == 'phone': 
-        for rest, value in srch_dict.items():
-            search_name = rest[0]
-            search_address = rest[1].split(',')[0]
-            for i, x in enumerate(value):
-                max_items = i + 1
-            for i in range(max_items):
-                values = value[i]
-                bus_id = values['id']
-                name = values['name']
-                try:
-                    price = values['price']
-                except:
-                    price = None
-                try:    
-                    cat_1 = values['categories'][0]['alias']
-                except:
-                    cat_1 = None
-                try:
-                    cat_2 = values['categories'][1]['alias']
-                except:
-                    cat_2 = cat_1
-                closed = values['is_closed']
-                address = values['location']['address1']
-                city = values['location']['city']
-                zip_code = values['location']['zip_code']
-                latitude = values['coordinates']['latitude']
-                longitude = values['coordinates']['longitude']
-                indiv_rest_list = [search_name, search_address, bus_id, name, 
-                                   price, cat_1, cat_2, closed, address, city, 
-                                   zip_code, latitude, longitude]
-                phn_frmt_dict[bus_id] = indiv_rest_list
-        return phn_frmt_dict
+    format_lst = []
+    for rest, value in search_dict.items():
+        search_name = rest[0]
+        search_address = rest[1].split(',')[0]
+        for i, x in enumerate(value):
+            max_items = i + 1
+        for i in range(max_items):
+            values = value[i]
+            bus_id = values['id']
+            name = values['name']
+            try:
+                price = values['price']
+            except:
+                price = None
+            try:    
+                cat_1 = values['categories'][0]['alias']
+            except:
+                cat_1 = None
+            try:
+                cat_2 = values['categories'][1]['alias']
+            except:
+                cat_2 = cat_1
+            rating = values['rating']
+            review_count = values['review_count']
+            closed = values['is_closed']
+            address = values['location']['address1']
+            city = values['location']['city']
+            zip_code = values['location']['zip_code']
+            latitude = values['coordinates']['latitude']
+            longitude = values['coordinates']['longitude']
+            indiv_rest_list = [search_name, search_address, bus_id, name, 
+                               price, cat_1, cat_2, rating, review_count, 
+                               closed, address, city, zip_code, latitude, 
+                               longitude]
+            format_lst.append(indiv_rest_list)
+    return format_lst
 
-    elif search_type.lower() == 'term_loc':
-        for rest, value in srch_dict.items():
-            search_name = rest[0]
-            search_address = rest[1].split(',')[0]
-            for i, x in enumerate(value):
-                max_items = i + 1
-            for i in range(max_items):
-                values = value[i]
-                bus_id = values['id']
-                name = values['name']
-                try:
-                    price = values['price']
-                except:
-                    price = None
-                try:    
-                    cat_1 = values['categories'][0]['alias']
-                except:
-                    cat_1 = None
-                try:
-                    cat_2 = values['categories'][1]['alias']
-                except:
-                    cat_2 = cat_1
-                closed = values['is_closed']
-                address = values['location']['address1']
-                city = values['location']['city']
-                zip_code = values['location']['zip_code']
-                latitude = values['coordinates']['latitude']
-                longitude = values['coordinates']['longitude']
-                indiv_rest_list = [search_name, search_address, bus_id, name, 
-                                   price, cat_1, cat_2, closed, address, city, 
-                                   zip_code, latitude, longitude]
-                tl_frmt_dict[bus_id] = indiv_rest_list
-        return tl_frmt_dict
-    
-    else:
-        print 'Provide a proper input for a search_type (phone or term_loc)'
-
-def pick_correct_matches(frmt_dict, search_type):
+def pick_correct_matches(formatted_list, search_type, process_list):
     """
     Determine proper matches from Yelp searches by specifying
     a new 'match' value in the search dictionary. Return any failed
     determinations.
     """
+    unknown = []
+    running_count = 0
+
+    for i in formatted_list:
+        search_name = i[0].lower().split(' ')
+        search_address = i[1].split()[0]
+        yelp_name = i[3].lower()
+        try:
+            yelp_address = i[10].split()[0]
+        except:
+            yelp_address = i[10]
+        address_prob = 0
+        name_prob = 0
+        try:
+            if yelp_address == search_address:
+                address_prob = 1
+                for word in search_name:
+                    word = word[:-1]
+                    if word in yelp_name:
+                        name_prob += 1.0 / len(search_name)
+            total_prob = address_prob + name_prob
+            i.append(total_prob)
+        except:
+            unknown.append(i)
+
+    return formatted_list, unknown
+
+def create_dataframe_of_matches(formatted_list, search_type, process_list):
+    """nothing"""
+
+    bus_ids = [i[2] for i in formatted_list]
+
+    df = pd.DataFrame(formatted_list, index=bus_ids,
+                      columns = ['search_name', 'search_address', 'bus_id', 'name', 
+                                 'price', 'cat_1', 'cat_2', 'rating', 'review_count', 
+                                 'closed','address', 'city', 'zip_code', 'latitude', 
+                                 'longitude', 'match'])
+
+    best_match = df[df['match'] > 1.0].groupby(['search_name', 'search_address'], 
+                                                as_index=False)['match'].max()
+
+    best_match_df = pd.merge(best_match, df)
+
+    number_of_search_matches = len(best_match)
+    number_of_search_matches_pct = round(number_of_search_matches * 100. / 
+                                         int(process_list[0][0].split(' ')[5]),2)
+
     if search_type.lower() == 'phone':
-        for key, attribute in frmt_dict.items():
-            search_address = attribute[1].split()[0]
-            yelp_address = attribute[8]
-            try:
-                split_address = yelp_address.split()[0]
-                if split_address == search_address:
-                    attribute.append(1)
-                else:
-                    attribute.append(0)
-            except:
-                unknwn_phn[key] = attribute
-
-        return unknwn_phn
-
+        process = ['{} successful matches from phone searches ({}%)'.format(number_of_search_matches,
+                                                                            number_of_search_matches_pct)]
+        append_process_tracker(process, process_list)
+    
     elif search_type.lower() == 'term_loc':
-        running_list = [] 
-        for key, attribute in frmt_dict.items():
-            search_address = attribute[1].split()[0]
-            yelp_address = attribute[8]
-            try:
-                split_address = yelp_address.split()[0]
-                if split_address == search_address:
-                    attribute.append(1)
-                    running_list.append((attribute[0], attribute[1]))
-                else:
-                    attribute.append(0)
-            except:
-                unknwn_tl[key] = attribute
-
-        tot_df_num = process_tracker['0_Total DataFrame'][0]
-
-        appnd_prcss_trckr('6_Successful Matches from Term/Loc Searches', 
-                          len(set(running_list)), 
-                          '{}%'.format(round(len(set(running_list))*100./tot_df_num),2))
+        total_num_of_successful_searches = int(process_list[2][0].split(' ')[0]) + number_of_search_matches
+        total_num_of_successful_searches_pct = round(total_num_of_successful_searches * 100. / 
+                                                     int(process_list[0][0].split(' ')[5]),2)
+        process_1 = ['{} successful matches from term/location searches ({}%)'.format(number_of_search_matches, 
+                                                                                      number_of_search_matches_pct)]
+        process_2 = ['{} successful matches from all searches ({}%)'.format(total_num_of_successful_searches, 
+                                                                            total_num_of_successful_searches_pct)]
+        append_process_tracker(process_1, process_list)
+        append_process_tracker(process_2, process_list)
         
-        all_succ_srchs = (process_tracker['6_Successful Matches from Term/Loc Searches'][0] +
-                           process_tracker['3_Successful Matches from Phone Searches'][0])
-
-        appnd_prcss_trckr('7_Successful Matches all Searches', 
-                          all_succ_srchs, 
-                          '{}%'.format(round(all_succ_srchs*100./tot_df_num),2))
-        
-        return unknwn_tl        
     else:
         print 'Provide a proper input for a search_type (phone or term_loc)'
 
+    return best_match_df
+
+def yelp_api_bus_id_calls(list_of_business_ids):
+
+    bearer_token = obtain_bearer_token()
+    headers = {'Authorization': 'Bearer {}'.format(bearer_token)}
+
+    for bus in list_of_business_ids:
+        failures = []
+        successes = []
+        new_str = quote(bus.encode('utf8'))
+        url_new = 'https://www.yelp.com/biz/{}?sort_by=date_asc'.format(new_str)
+        url_old = 'https://www.yelp.com/biz/{}?sort_by=date_desc'.format(new_str)
+        try:
+            rqst_new = requests.request('GET', url_new, headers=headers)
+            sleep(5)
+            rqst_old = requests.request('GET', url_old, headers=headers)
+            successes.append(rqst_new.content)
+            successes.append(rqst_old.content)
+        except:
+            sleep(30)
+            try:
+                rqst_new = requests.request('GET', url_new, headers=headers)
+                sleep(3)
+                rqst_old = requests.request('GET', url_old, headers=headers)
+                successes.append(rqst_new.content)
+                successes.append(rqst_old.content)
+            except:
+                failures.append(new_str)
+    return failures, successes
+
 def yelp_api_calls_business_id(list_of_business_ids):
 
+    ratings = {}
     bearer_token = obtain_bearer_token()
     headers = {'Authorization': 'Bearer {}'.format(bearer_token)}
 
